@@ -1,0 +1,11 @@
+# Created by .ignore support plugin (hsz.mobi)
+Data/
+Env/
+.idea/.gitignore
+.idea/DeepLearning_Project.iml
+.idea/codeStyles/
+.idea/dbnavigator.xml
+.idea/inspectionProfiles/
+.idea/misc.xml
+.idea/modules.xml
+.idea/vcs.xml

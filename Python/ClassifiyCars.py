@@ -3,11 +3,47 @@ import os
 import re
 import pdb
 import tensorflow as tf
-from helper_func import *
 from matplotlib.pyplot import imshow
+
 
 # Data can be downloaded from https://www.kaggle.com/jutrera/stanford-car-dataset-by-classes-folder/data
 
+# Define some useful functions
+IMG_WIDTH = 224
+IMG_HEIGHT = 224
+
+def load_filenames(dir_path, list_filenames):
+    """ load the full image names in a list """
+    for x in os.listdir(dir_path):
+        folder_name = os.path.join(dir_path, x)
+        list_filenames.extend([os.path.join(folder_name, x) for x in os.listdir(folder_name)])
+
+# TODO fix filepath
+def load_images(filename, label):
+
+    result_file = tf.io.read_file(filename)
+    result_image = tf.image.decode_jpeg(result_file) #decode_jpeg
+    result_image = tf.image.convert_image_dtype(result_image, tf.float32) #convert to float32
+    result_image = tf.image.resize(result_image, (224, 224)) #resize the data
+    return (result_image, label)
+
+def get_label(file_path):
+    parts = tf.strings.split(file_path, '\\')
+    return parts[-2]
+
+def decode_img(img):
+  img = tf.image.decode_jpeg(img, channels=3) #color images
+  img = tf.image.convert_image_dtype(img, tf.float32) #convert unit8 tensor to floats in the [0,1]range
+  img = tf.image.resize(img, [IMG_WIDTH, IMG_HEIGHT]) #resize the image into 224*224
+  return img
+
+def process_path(file_path):
+  label = get_label(file_path)
+  img = tf.io.read_file(file_path)
+  img = decode_img(img)
+  return img, label
+
+# define file paths
 path_data = os.path.abspath('Data/car_data')
 path_train_data = os.path.join(path_data, 'train')
 path_test_data = os.path.join(path_data, 'test')
@@ -15,112 +51,47 @@ path_test_data = os.path.join(path_data, 'test')
 train_filenames = []
 test_filenames = []
 
-def load_filenames(dir_path, list_filenames):
-    for x in os.listdir(dir_path):
-        folder_name = os.path.join(dir_path, x)
-        list_filenames.extend([os.path.join(folder_name,x) for x in os.listdir(folder_name)])
-
 load_filenames(dir_path=path_train_data, list_filenames=train_filenames)
 load_filenames(dir_path=path_test_data, list_filenames=test_filenames)
 
-len(train_filenames)
-len(test_filenames)
+print(len(train_filenames))  # 8144
+print(len(test_filenames))  # 8041
 
+# count the number of train images in each folder
 for y, i in enumerate(os.listdir(path_train_data)):
-    print(y)
-    print(i, " : ", len([x for x in test_filenames if i in x]))
+    # print(y)
+    print(i, ": ", len([x for x in test_filenames if i in x]))
 
+# count the number of test images in each folder
 for y, i in enumerate(os.listdir(path_test_data)):
-    print(y)
+    # print(y)
     print(i, " : ", len([x for x in test_filenames if i in x]))
 
-test_labels = [re.search(r'(?<=test\\)[A-Za-z].+(?=\\)', x).group() for x in test_filenames]
+# extract the labels for training and test set
+# TODO could be integrated in the function load_filenames
 train_labels = [re.search(r'(?<=train\\)[A-Za-z].+(?=\\)', x).group() for x in train_filenames]
+test_labels = [re.search(r'(?<=test\\)[A-Za-z].+(?=\\)', x).group() for x in test_filenames]
 
-len(train_labels)
-len(test_labels)
+print(len(train_labels))
+print(len(test_labels))
 
 train_filenames = np.array(train_filenames)
 test_filenames = np.array(test_filenames)
 
-# list_ds = tf.data.Dataset.list_files(path_train_data)
+train_dataset = tf.data.Dataset.from_tensor_slices((train_filenames, train_labels))
+train_dataset = train_dataset.map(load_images)
+train_dataset = train_dataset.shuffle(len(train_filenames))
+train_dataset = train_dataset.batch(32)
+train_dataset = train_dataset.repeat()
 
-tst_resized = [tf.image.resize(tf.image.decode_image(tf.io.read_file(x)), (224, 224)) for x in train_filenames[:4]]
-tst_raw = [tf.image.decode_image(tf.io.read_file(x)) for x in train_filenames[:4]]
-
-tst_raw_cast = tf.cast(
-    tst_raw[0],
-    dtype='int16'
-)
-
-imshow(tst_raw[0])
-imshow(tf.image.resize(tst_raw[0], (224, 224)))
-
-
-
-
-
-train_filenames_images = [tf.image.decode_image(tf.io.read_file(x)) for x in train_filenames]
-
-
-train_dataset = tf.data.Dataset.from_tensor_slices((train_filenames_images, train_labels))
-train_dataset = train_dataset.batch(16)
 test_dataset = tf.data.Dataset.from_tensor_slices((test_filenames, test_labels))
-for data, label in train_dataset:
-    print(data, " with label : ", label)
-    break
+test_dataset = test_dataset.map(load_images)
 
-for data, label in train_dataset:
-    print(data)
-    print(label)
-    break
+for item in test_dataset.take(1):
+    imshow(item[0].numpy())
 
-
-
-# model.fit(dataset, steps_per_epoch = int(len(dataset) / 16(number epochs))
-
-for i in os.listdir(path_train_data):
-    print(i)
-
-list_ds = tf.data.Dataset.list_files(path_train_data + '\\' + 'Volvo XC90 SUV 2007\\*')
-
-for f in list_ds.take(1):
-    tst = f
+test_dataset = test_dataset.shuffle(len(train_filenames))
+test_dataset = test_dataset.batch(32)
+test_dataset = test_dataset.repeat()
 
 
-
-tst = list_ds.take(1)
-
-def get_label(file_path):
-  parts = tf.strings.split(file_path, '\\')
-  return parts[-2] == 'Volvo XC90 SUV 2007'
-
-label = tf.strings.split(tst, '\\')[-2]
-
-
-IMG_WIDTH = 224
-IMG_HEIGHT = 224
-
-img = tf.io.read_file(tst)
-img = tf.image.decode_jpeg(img, channels=3)  #color images
-img = tf.image.convert_image_dtype(img, tf.float32)  #convert unit8 tensor to floats in the [0,1] range
-imshow(tf.image.resize(img, [IMG_WIDTH, IMG_HEIGHT]))
-
-
-
-
-def decode_img(img):
-    img = tf.image.decode_jpeg(img, channels=3)  #color images
-    img = tf.image.convert_image_dtype(img, tf.float32)  #convert unit8 tensor to floats in the [0,1] range
-    return tf.image.resize(img, [IMG_WIDTH, IMG_HEIGHT]) #resize the image into 224*224
-
-
-def process_path(file_path):
-  label = get_label(file_path)
-  img = tf.io.read_file(file_path)
-  pdb.set_trace()
-  img = decode_img(img)
-  return img, label
-AUTOTUNE=tf.data.experimental.AUTOTUNE
-
-labeled_ds = list_ds.map(process_path, num_parallel_calls=AUTOTUNE)
