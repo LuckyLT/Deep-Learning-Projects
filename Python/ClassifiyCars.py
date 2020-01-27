@@ -4,7 +4,11 @@ import re
 import pdb
 import tensorflow as tf
 from matplotlib.pyplot import imshow
-
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import Input, Conv2D, MaxPool2D, BatchNormalization, Flatten, Dense
+from tensorflow.keras.optimizers import Adam
+from tensorflow.keras.losses import SparseCategoricalCrossentropy
+from tensorflow.keras.metrics import categorical_accuracy, AUC, SparseCategoricalAccuracy
 
 # Data can be downloaded from https://www.kaggle.com/jutrera/stanford-car-dataset-by-classes-folder/data
 
@@ -58,14 +62,9 @@ print(len(train_filenames))  # 8144
 print(len(test_filenames))  # 8041
 
 # count the number of train images in each folder
-for y, i in enumerate(os.listdir(path_train_data)):
+for i, j in zip(os.listdir(path_train_data), os.listdir(path_train_data)):
     # print(y)
-    print(i, ": ", len([x for x in test_filenames if i in x]))
-
-# count the number of test images in each folder
-for y, i in enumerate(os.listdir(path_test_data)):
-    # print(y)
-    print(i, " : ", len([x for x in test_filenames if i in x]))
+    print(i, "- train: ", len([x for x in test_filenames if i in x])," test: ", len([x for x in test_filenames if i in x]))
 
 # extract the labels for training and test set
 # TODO could be integrated in the function load_filenames
@@ -86,12 +85,45 @@ train_dataset = train_dataset.repeat()
 
 test_dataset = tf.data.Dataset.from_tensor_slices((test_filenames, test_labels))
 test_dataset = test_dataset.map(load_images)
-
-for item in test_dataset.take(1):
-    imshow(item[0].numpy())
-
 test_dataset = test_dataset.shuffle(len(train_filenames))
 test_dataset = test_dataset.batch(32)
 test_dataset = test_dataset.repeat()
+
+
+image_batch, label_batch = next(iter(train_dataset))
+imshow(image_batch[0])
+label_batch[0]
+
+
+babyNN = Sequential([
+    Input(shape=(IMG_WIDTH, IMG_HEIGHT, 3)),
+    Conv2D(20, 3, padding="same", activation='relu'),
+    Conv2D(20, 3, padding="same", activation='relu'),
+    MaxPool2D(),
+    Conv2D(80, 3, padding="same", activation='relu'),
+    Conv2D(80, 3, padding="same", activation='relu'),
+    MaxPool2D(),
+    BatchNormalization(),
+    Conv2D(140, 3, padding="same", activation='relu'),
+    Conv2D(140, 3, padding="same", activation='relu'),
+    MaxPool2D(),
+    Flatten(),
+    Dense(400, activation='relu'),
+    Dense(300, activation='relu'),
+    Dense(196, activation='softmax')
+])
+
+
+babyNN.summary()
+
+babyNN.compile(optimizer=Adam(learning_rate=0.001),
+              loss=SparseCategoricalCrossentropy(),
+              metrics=[SparseCategoricalAccuracy()])
+
+history = babyNN.fit(
+    steps_per_epoch= int(len(train_filenames) / 32),
+    validation_split=0.01
+)
+
 
 
