@@ -77,6 +77,9 @@ print(len(test_labels))
 train_filenames = np.array(train_filenames)
 test_filenames = np.array(test_filenames)
 
+train_labels = np.asarray(train_labels)
+test_labels = np.asarray(test_labels)
+
 train_dataset = tf.data.Dataset.from_tensor_slices((train_filenames, train_labels))
 train_dataset = train_dataset.map(load_images)
 train_dataset = train_dataset.shuffle(len(train_filenames))
@@ -120,9 +123,8 @@ babyNN.compile(optimizer=Adam(learning_rate=0.001),
               loss=SparseCategoricalCrossentropy(),
               metrics=[SparseCategoricalAccuracy()])
 
-history = babyNN.fit(
-    steps_per_epoch= int(len(train_filenames) / 32),
-    validation_split=0.01
+history = babyNN.fit(train_dataset,
+    steps_per_epoch=int(len(train_filenames) / 32)
 )
 
 
