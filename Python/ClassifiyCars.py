@@ -1,84 +1,174 @@
 import numpy as np
+import pandas as pd
 import os
 import re
 import pdb
+import matplotlib.pyplot as plt
 import tensorflow as tf
-from matplotlib.pyplot import imshow
+from skimage.io import imread
 from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import Input, Conv2D, MaxPool2D, BatchNormalization, Flatten, Dense
 from tensorflow.keras.optimizers import Adam
 from tensorflow.keras.losses import SparseCategoricalCrossentropy
 from tensorflow.keras.metrics import categorical_accuracy, AUC, SparseCategoricalAccuracy
-
+import shutil
 # Data can be downloaded from https://www.kaggle.com/jutrera/stanford-car-dataset-by-classes-folder/data
 
+with open('pandasOptions.env', 'r') as f:
+    for line in f:
+        pd.set_option(line.split("=")[0], int(line.split("=")[1]))
+
+
 # Define some useful functions
-IMG_WIDTH = 224
-IMG_HEIGHT = 224
+IMG_WIDTH, IMG_HEIGHT = 224, 224
 
-def load_filenames(dir_path, list_filenames):
-    """ load the full image names in a list """
-    for x in os.listdir(dir_path):
-        folder_name = os.path.join(dir_path, x)
-        list_filenames.extend([os.path.join(folder_name, x) for x in os.listdir(folder_name)])
+TRAIN_PCT, VAL_PCT, TEST_PCT = 0.9, 0.05, 0.05
 
-# TODO fix filepath
-def load_images(filename, label):
-
-    result_file = tf.io.read_file(filename)
-    result_image = tf.image.decode_jpeg(result_file) #decode_jpeg
-    result_image = tf.image.convert_image_dtype(result_image, tf.float32) #convert to float32
-    result_image = tf.image.resize(result_image, (224, 224)) #resize the data
-    return (result_image, label)
-
-def get_label(file_path):
-    parts = tf.strings.split(file_path, '\\')
-    return parts[-2]
-
-def decode_img(img):
-  img = tf.image.decode_jpeg(img, channels=3) #color images
-  img = tf.image.convert_image_dtype(img, tf.float32) #convert unit8 tensor to floats in the [0,1]range
-  img = tf.image.resize(img, [IMG_WIDTH, IMG_HEIGHT]) #resize the image into 224*224
-  return img
-
-def process_path(file_path):
-  label = get_label(file_path)
-  img = tf.io.read_file(file_path)
-  img = decode_img(img)
-  return img, label
+IMAGE_SIZE = (224, 224)
+BATCH_SIZE = 32
 
 # define file paths
 path_data = os.path.abspath('Data/car_data')
-path_train_data = os.path.join(path_data, 'train')
-path_test_data = os.path.join(path_data, 'test')
+train_path_data = os.path.join(path_data, 'train')
+SPLITS_DIR = "Data\\car_data\\splits"
 
-train_filenames = []
-test_filenames = []
+labels = os.listdir(train_path_data)
 
-load_filenames(dir_path=path_train_data, list_filenames=train_filenames)
-load_filenames(dir_path=path_test_data, list_filenames=test_filenames)
+def load_filenames(dir_path):
+    """
+            Returns the filenames and their corresponding classes.
+    """
 
-print(len(train_filenames))  # 8144
-print(len(test_filenames))  # 8041
+    filenames = {
+        'image_file': [],
+        'image_class': []
+    }
 
-# count the number of train images in each folder
-for i, j in zip(os.listdir(path_train_data), os.listdir(path_train_data)):
-    # print(y)
-    print(i, "- train: ", len([x for x in test_filenames if i in x])," test: ", len([x for x in test_filenames if i in x]))
+    for car_brand in os.listdir(dir_path):
+        folder_name = os.path.join(dir_path, car_brand)
 
-# extract the labels for training and test set
-# TODO could be integrated in the function load_filenames
-train_labels = [re.search(r'(?<=train\\)[A-Za-z].+(?=\\)', x).group() for x in train_filenames]
-test_labels = [re.search(r'(?<=test\\)[A-Za-z].+(?=\\)', x).group() for x in test_filenames]
+        filenames_in_class = [os.path.join(folder_name, x) for x in os.listdir(folder_name)]
+        filenames['image_file'].extend(filenames_in_class)
 
-print(len(train_labels))
-print(len(test_labels))
+        filenames["image_class"].extend([car_brand] * len(filenames_in_class))
 
-train_filenames = np.array(train_filenames)
-test_filenames = np.array(test_filenames)
 
-train_labels = np.asarray(train_labels)
-test_labels = np.asarray(test_labels)
+    return(pd.DataFrame(filenames))
+
+# TODO fix filepath
+
+Filenames = load_filenames(dir_path=train_path_data)
+
+# Data exploration
+Filenames.groupby('image_class').size() #we might need over sampling
+
+Filenames.shape #(10496, 2)
+
+def get_image_dimensions(image_filename):
+    """
+    Returns the dimensions of the image (height, width, channels) in pixels.
+
+    There are better methods which don't involve reading the entire image
+    and loading it in memory but this is simple enough.
+    """
+    return imread(image_filename).shape
+
+dims = Filenames.image_file.map(get_image_dimensions)
+
+dims = pd.DataFrame([*dims], columns=["height", "width", "channels"])
+len(dims[dims.channels != 3]) #20 gray images
+
+#exclude the bad images
+Filenames = Filenames.join(dims).loc[dims.channels == 3]
+
+#Distribution of image dimensions
+fig, (h_ax, w_ax, res_ax) = plt.subplots(1, 3, figsize = (18, 6))
+h_ax.hist(dims.height, bins = 30)
+h_ax.set_xlabel("Image height")
+
+w_ax.hist(dims.width, bins = 30)
+w_ax.set_xlabel("Image width")
+
+res_ax.hist(dims.width / dims.height, bins = 40)
+res_ax.set_xlabel("Aspect ratio")
+
+plt.suptitle("Distributions of image dimensions")
+plt.show()
+
+# Split the data
+train_data, val_data, test_data = pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
+
+
+for class_name, data in Filenames.groupby("image_class"):
+    # Randomize the order (shuffle) before splitting
+    # pdb.set_trace()
+    data = data.sample(frac=1)
+    train_end_index, val_end_index = round(TRAIN_PCT * len(data)), round((TRAIN_PCT + VAL_PCT) * len(data))
+    train_data_in_class, val_data_in_class, test_data_in_class = \
+        data[:train_end_index], data[train_end_index: val_end_index], data[val_end_index:]
+    train_data = pd.concat([train_data, train_data_in_class])
+    val_data = pd.concat([val_data, val_data_in_class])
+    test_data = pd.concat([test_data, test_data_in_class])
+
+# Randomize the sets once again so the classes are not consecutive
+train_data = train_data.sample(frac=1)
+val_data = val_data.sample(frac=1)
+test_data = val_data.sample(frac=1)
+
+if not os.path.exists(SPLITS_DIR):
+    os.makedirs(SPLITS_DIR)
+
+for dataset, filename in zip([train_data, val_data, test_data], ["train", "val", "test"]):
+    dataset.to_csv(os.path.join(SPLITS_DIR, filename + ".csv"), index=False)
+
+
+# Load the dataframes
+train_data = pd.read_csv(os.path.join(SPLITS_DIR, "train.csv"))
+val_data = pd.read_csv(os.path.join(SPLITS_DIR, "val.csv"))
+test_data = pd.read_csv(os.path.join(SPLITS_DIR, "test.csv"))
+
+def load_images(image_filename, image_label):
+
+    # read the file and then decode it
+    result_file = tf.io.read_file(image_filename)
+    result_image = tf.image.decode_jpeg(result_file) #decode_jpeg
+
+    # result_image = tf.image.convert_image_dtype(result_image, tf.float32) #convert to float32
+
+    # resize the image
+    result_image = tf.image.resize(result_image, (224, 224)) #resize the data
+
+    def preprocess_image(x):
+        """
+        This is a stripped-down version of Keras' own imagenet preprocessing function,
+        as the original one is throwing an exception
+        """
+        pdb.set_trace()
+        backend = tf.keras.backend
+
+        # 'RGB'->'BGR'
+        x = x[..., ::-1]
+        mean = [103.939, 116.779, 123.68]
+        std = None
+
+        mean_tensor = backend.constant(-np.array(mean))
+
+        # Zero-center by mean pixel
+        if backend.dtype(x) != backend.dtype(mean_tensor):
+            x = backend.bias_add(
+                x, backend.cast(mean_tensor, backend.dtype(x)))
+        else:
+            x = backend.bias_add(x, mean_tensor)
+        if std is not None:
+            x /= std
+        return x
+
+    image = preprocess_image(result_image)
+
+    return image
+
+    # Return the correct class
+image_class_encoded = tf.one_hot(labels, depth=len(set(labels)))
 
 train_dataset = tf.data.Dataset.from_tensor_slices((train_filenames, train_labels))
 train_dataset = train_dataset.map(load_images)
