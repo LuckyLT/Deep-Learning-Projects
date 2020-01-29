@@ -7,7 +7,7 @@ import matplotlib.pyplot as plt
 import tensorflow as tf
 from skimage.io import imread
 from tensorflow.keras.models import Sequential
-from tensorflow.keras.layers import Input, Conv2D, MaxPool2D, BatchNormalization, Flatten, Dense
+from tensorflow.keras.layers import Input, Conv2D, MaxPool2D, BatchNormalization, Flatten, Dense, Dropout
 from tensorflow.keras.optimizers import Adam
 from tensorflow.keras.losses import SparseCategoricalCrossentropy
 from tensorflow.keras.metrics import categorical_accuracy, AUC, SparseCategoricalAccuracy
@@ -23,15 +23,16 @@ model = Sequential([
     Input(shape=(28, 28)),
     Flatten(),
     Dense(512, activation='relu'),
+    Dropout(0.2),
     Dense(10, activation='softmax')
 ])
 
 model.summary()
 
-model.compile(optimizer=Adam(learning_rate=0.0001),
-               loss=SparseCategoricalCrossentropy())
+model.compile(optimizer='adam',
+              loss=tf.keras.losses.sparse_categorical_crossentropy,
+              metrics=[tf.keras.metrics.sparse_categorical_accuracy])
 
-model.fit(x_train, y_train, epochs=2)
+model.fit(x_train, y_train, epochs=4)
 
-model.evaluate(x_train, y_train, verbose=1)
-model.evaluate(x_test, y_test, verbose=1)
+model.evaluate(x_test, y_test, verbose=0)
