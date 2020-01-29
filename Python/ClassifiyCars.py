@@ -12,12 +12,13 @@ from tensorflow.keras.optimizers import Adam
 from tensorflow.keras.losses import SparseCategoricalCrossentropy
 from tensorflow.keras.metrics import categorical_accuracy, AUC, SparseCategoricalAccuracy
 import shutil
+from functions import *
+
 # Data can be downloaded from https://www.kaggle.com/jutrera/stanford-car-dataset-by-classes-folder/data
 
 with open('pandasOptions.env', 'r') as f:
     for line in f:
         pd.set_option(line.split("=")[0], int(line.split("=")[1]))
-
 
 # Define some useful functions
 IMG_WIDTH, IMG_HEIGHT = 224, 224
@@ -34,62 +35,32 @@ SPLITS_DIR = "Data\\car_data\\splits"
 
 labels = os.listdir(train_path_data)
 
-def load_filenames(dir_path):
-    """
-            Returns the filenames and their corresponding classes.
-    """
-
-    filenames = {
-        'image_file': [],
-        'image_class': []
-    }
-
-    for car_brand in os.listdir(dir_path):
-        folder_name = os.path.join(dir_path, car_brand)
-
-        filenames_in_class = [os.path.join(folder_name, x) for x in os.listdir(folder_name)]
-        filenames['image_file'].extend(filenames_in_class)
-
-        filenames["image_class"].extend([car_brand] * len(filenames_in_class))
-
-
-    return(pd.DataFrame(filenames))
-
 # TODO fix filepath
 
 Filenames = load_filenames(dir_path=train_path_data)
 
 # Data exploration
-Filenames.groupby('image_class').size() #we might need over sampling
+Filenames.groupby('image_class').size()  # we might need over sampling
 
-Filenames.shape #(10496, 2)
-
-def get_image_dimensions(image_filename):
-    """
-    Returns the dimensions of the image (height, width, channels) in pixels.
-
-    There are better methods which don't involve reading the entire image
-    and loading it in memory but this is simple enough.
-    """
-    return imread(image_filename).shape
+Filenames.shape  # (10496, 2)
 
 dims = Filenames.image_file.map(get_image_dimensions)
 
 dims = pd.DataFrame([*dims], columns=["height", "width", "channels"])
-len(dims[dims.channels != 3]) #20 gray images
+len(dims[dims.channels != 3])  # 20 gray images
 
-#exclude the bad images
+# exclude the bad images
 Filenames = Filenames.join(dims).loc[dims.channels == 3]
 
-#Distribution of image dimensions
-fig, (h_ax, w_ax, res_ax) = plt.subplots(1, 3, figsize = (18, 6))
-h_ax.hist(dims.height, bins = 30)
+# Distribution of image dimensions
+fig, (h_ax, w_ax, res_ax) = plt.subplots(1, 3, figsize=(18, 6))
+h_ax.hist(dims.height, bins=30)
 h_ax.set_xlabel("Image height")
 
-w_ax.hist(dims.width, bins = 30)
+w_ax.hist(dims.width, bins=30)
 w_ax.set_xlabel("Image width")
 
-res_ax.hist(dims.width / dims.height, bins = 40)
+res_ax.hist(dims.width / dims.height, bins=40)
 res_ax.set_xlabel("Aspect ratio")
 
 plt.suptitle("Distributions of image dimensions")
@@ -97,7 +68,6 @@ plt.show()
 
 # Split the data
 train_data, val_data, test_data = pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
-
 
 for class_name, data in Filenames.groupby("image_class"):
     # Randomize the order (shuffle) before splitting
@@ -121,72 +91,50 @@ if not os.path.exists(SPLITS_DIR):
 for dataset, filename in zip([train_data, val_data, test_data], ["train", "val", "test"]):
     dataset.to_csv(os.path.join(SPLITS_DIR, filename + ".csv"), index=False)
 
-
 # Load the dataframes
 train_data = pd.read_csv(os.path.join(SPLITS_DIR, "train.csv"))
 val_data = pd.read_csv(os.path.join(SPLITS_DIR, "val.csv"))
 test_data = pd.read_csv(os.path.join(SPLITS_DIR, "test.csv"))
 
-def load_images(image_filename, image_label):
 
-    # read the file and then decode it
-    result_file = tf.io.read_file(image_filename)
-    result_image = tf.image.decode_jpeg(result_file) #decode_jpeg
+def generate_one_hot_labels(labels, df):
+    raw_labels = pd.Series(labels, name='image_class').reset_index()
+    index_order = pd.merge(df, raw_labels, how='left', on='image_class')['index']
+    labels_one_hot_encoded = tf.one_hot([*index_order], depth=len(labels))  # works
+    return(labels_one_hot_encoded)
 
-    # result_image = tf.image.convert_image_dtype(result_image, tf.float32) #convert to float32
+labels_train_one_hot_encoded = generate_one_hot_labels(labels, train_data)
+labels_val_one_hot_encoded = generate_one_hot_labels(labels, val_data)
+labels_test_one_hot_encoded = generate_one_hot_labels(labels, test_data)
 
-    # resize the image
-    result_image = tf.image.resize(result_image, (224, 224)) #resize the data
+labels_train = tf.argmax(labels_train_one_hot_encoded, axis=1)
+labels_val = tf.argmax(labels_val_one_hot_encoded, axis=1)
+labels_test = tf.argmax(labels_test_one_hot_encoded, axis=1)
 
-    def preprocess_image(x):
-        """
-        This is a stripped-down version of Keras' own imagenet preprocessing function,
-        as the original one is throwing an exception
-        """
-        pdb.set_trace()
-        backend = tf.keras.backend
+train_data = initialize_tf_dataset(train_data, labels_train)
+val_data = initialize_tf_dataset(val_data, labels_val)
+test_data = initialize_tf_dataset(test_data, labels_test, should_batch=False, should_repeat=False)
 
-        # 'RGB'->'BGR'
-        x = x[..., ::-1]
-        mean = [103.939, 116.779, 123.68]
-        std = None
-
-        mean_tensor = backend.constant(-np.array(mean))
-
-        # Zero-center by mean pixel
-        if backend.dtype(x) != backend.dtype(mean_tensor):
-            x = backend.bias_add(
-                x, backend.cast(mean_tensor, backend.dtype(x)))
-        else:
-            x = backend.bias_add(x, mean_tensor)
-        if std is not None:
-            x /= std
-        return x
-
-    image = preprocess_image(result_image)
-
-    return image
-
-    # Return the correct class
-image_class_encoded = tf.one_hot(labels, depth=len(set(labels)))
-
-train_dataset = tf.data.Dataset.from_tensor_slices((train_filenames, train_labels))
-train_dataset = train_dataset.map(load_images)
-train_dataset = train_dataset.shuffle(len(train_filenames))
-train_dataset = train_dataset.batch(32)
-train_dataset = train_dataset.repeat()
-
-test_dataset = tf.data.Dataset.from_tensor_slices((test_filenames, test_labels))
-test_dataset = test_dataset.map(load_images)
-test_dataset = test_dataset.shuffle(len(train_filenames))
-test_dataset = test_dataset.batch(32)
-test_dataset = test_dataset.repeat()
+for i in train_data.take(1):
+    tst = i[0]
 
 
-image_batch, label_batch = next(iter(train_dataset))
-imshow(image_batch[0])
-label_batch[0]
-
+# my approach
+# train_dataset = tf.data.Dataset.from_tensor_slices((train_filenames, image_class_encoded))
+# train_dataset = train_dataset.map(load_images)
+# train_dataset = train_dataset.shuffle(len(train_filenames))
+# train_dataset = train_dataset.batch(32)
+# train_dataset = train_dataset.repeat()
+#
+# test_dataset = tf.data.Dataset.from_tensor_slices((test_filenames, test_labels))
+# test_dataset = test_dataset.map(load_images)
+# test_dataset = test_dataset.shuffle(len(train_filenames))
+# test_dataset = test_dataset.batch(32)
+# test_dataset = test_dataset.repeat()
+#
+# image_batch, label_batch = next(iter(train_dataset))
+# imshow(image_batch[0])
+# label_batch[0]
 
 babyNN = Sequential([
     Input(shape=(IMG_WIDTH, IMG_HEIGHT, 3)),
@@ -201,21 +149,26 @@ babyNN = Sequential([
     Conv2D(140, 3, padding="same", activation='relu'),
     MaxPool2D(),
     Flatten(),
-    Dense(400, activation='relu'),
     Dense(300, activation='relu'),
-    Dense(196, activation='softmax')
+    Dense(48, activation='softmax')
 ])
-
 
 babyNN.summary()
 
 babyNN.compile(optimizer=Adam(learning_rate=0.001),
-              loss=SparseCategoricalCrossentropy(),
-              metrics=[SparseCategoricalAccuracy()])
+               loss=SparseCategoricalCrossentropy())
 
-history = babyNN.fit(train_dataset,
-    steps_per_epoch=int(len(train_filenames) / 32)
-)
+# TRAINING
+steps_per_epoch_train = round(len(Filenames.image_file.values) * TRAIN_PCT / BATCH_SIZE)
+steps_per_epoch_val = round(len(Filenames.image_file.values) * VAL_PCT / BATCH_SIZE)
+
+steps_per_epoch_train, steps_per_epoch_val
+
+history = babyNN.fit(train_data,
+                     epochs=1,
+                     steps_per_epoch=steps_per_epoch_train,
+                     validation_data=val_data,
+                     validation_steps=steps_per_epoch_val)
 
 
-
+tf.argmax(labels_train_one_hot_encoded, axis=1)
