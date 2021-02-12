@@ -1,17 +1,12 @@
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
-
 import os
 from skimage.io import imread
-
 import tensorflow as tf
-
 from tensorflow.keras.models import Model, Sequential
 from tensorflow.keras.layers import Dense, Dropout
-
 from tensorflow.keras.applications.resnet50 import ResNet50, preprocess_input
-
 from tensorflow.keras.optimizers import Adam
 from tensorflow.keras.losses import BinaryCrossentropy
 from tensorflow.keras.metrics import BinaryAccuracy
