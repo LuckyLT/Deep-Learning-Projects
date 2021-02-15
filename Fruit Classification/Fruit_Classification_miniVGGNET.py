@@ -10,6 +10,8 @@ from tensorflow.keras.layers.experimental.preprocessing import Rescaling
 from tensorflow.keras.preprocessing import image_dataset_from_directory
 import shutil
 import numpy as np
+from PIL import Image
+
 
 
 class MVGGNET:
@@ -50,6 +52,8 @@ class MVGGNET:
 
         return model
 
+# Approach 1:
+# Import the data as image_dataset_from_directory
 #set relative path to data dir
 data_dir = 'Data\\Fruit'
 train_test_dir = [os.path.join(data_dir, x) for x in os.listdir(data_dir)]
@@ -57,38 +61,6 @@ train_test_dir = [os.path.join(data_dir, x) for x in os.listdir(data_dir)]
 train_dir = train_test_dir[np.argmax([int(x.__contains__('Train')) for x in train_test_dir])]
 val_dir = train_test_dir[np.argmax([int(x.__contains__('Test')) for x in train_test_dir])]
 test_dir = train_test_dir[np.argmax([int(x.__contains__('Multiple')) for x in train_test_dir])]
-
-#set batch size h and w
-height, width = 64, 64
-batch_size = 32
-
-#create train dataset from directory
-train_ds = image_dataset_from_directory(
-    train_dir,
-    validation_split=0.2,
-    subset="training",
-    seed=123,
-    image_size=(height, width),
-    batch_size=batch_size)
-
-# Found 49016 files belonging to 99 classes.
-# Using 39213 files for training.
-
-#create train validation from directory
-val_ds = image_dataset_from_directory(
-    val_dir,
-    validation_split=0.2,
-    subset="validation",
-    seed=123,
-    image_size=(height, width),
-    batch_size=batch_size)
-
-#create train test from directory
-test_ds = image_dataset_from_directory(
-    test_dir,
-    seed=123,
-    image_size=(height, width),
-    batch_size=batch_size)
 
 
 #all the classes from val in train which is ok
@@ -111,8 +83,11 @@ for i in train_classes_to_be_moved:
         print(z, '-->', y)
         shutil.move(z, y)
 
+#set basic image processing variables
+height, width = 64, 64
+batch_size = 32
 
-#now rerun the train_ds and val_ds scripts
+# create train set from directory
 train_ds = image_dataset_from_directory(
     train_dir,
     validation_split=0.2,
@@ -121,21 +96,23 @@ train_ds = image_dataset_from_directory(
     image_size=(height, width),
     batch_size=batch_size)
 
-# Found 51820 files belonging to 120 classes.
-# Using 41456 files for training.
-
+# Found 49016 files belonging to 99 classes.
+# Using 39213 files for training.
+#create train validation from directory
 val_ds = image_dataset_from_directory(
-    test_dir,
-    validation_split=0.2,
-    subset="validation",
-    seed=123,
-    image_size=(height, width),
-    batch_size=batch_size)
+           val_dir,
+           validation_split=0.2,
+           subset="validation",
+           seed=123,
+           image_size=(height, width),
+           batch_size=batch_size)
 
-
-# Found 17811 files belonging to 120 classes.
-# Using 3562 files for validation.
-# --> everything looks cool
+#create train test from directory
+test_ds = image_dataset_from_directory(
+       test_dir,
+       seed=123,
+       image_size=(height, width),
+       batch_size=1)
 
 #keep all the class names in a var
 class_names = train_ds.class_names
@@ -151,18 +128,11 @@ for images, labels in train_ds.take(1):
 #safe the fig
 plt.savefig('Fruit Classification/Visualization/random_fruits_2.jpg')
 
+
 for image_batch, labels_batch in train_ds:
   print(image_batch.shape)
   print(labels_batch.shape)
   break
-
-#now in form --> (32, 64, 64, 3) (32,)
-
-
-first_image = image_batch[0]
-#pixel values are now in range 0,1 not in 0, 255
-print(np.min(first_image), np.max(first_image))
-# 0.0 1.0
 
 #Config the data set performance
 AUTOTUNE = tf.data.AUTOTUNE
@@ -171,6 +141,8 @@ train_ds = train_ds.cache().prefetch(buffer_size=AUTOTUNE)
 val_ds = val_ds.cache().prefetch(buffer_size=AUTOTUNE)
 
 num_classes = len(train_ds.class_names)
+
+#Modelling
 model = MVGGNET.build(width=32, height=32, depth=3, classes=num_classes)
 model.summary()
 
@@ -205,6 +177,11 @@ plt.savefig('Fruit/Visualization/miniVGGNET.png')
 model.evaluate(val_ds)
 # loss: 0.1333 - accuracy: 0.9803 not bad
 
+pred_data = np.argmax(model.predict(test_ds), axis=1)
+list(set([class_names[x] for x in pred_data])) == test_ds.class_names
+
+# loss: 0.1333 - accuracy: 0.9803 not bad
+
 #predict random fruits
 for images, labels in val_ds.take(5):
     pred_data = np.argmax(model.predict(images), axis=1)
@@ -226,6 +203,5 @@ for images, labels in test_ds.take(1):
         plt.title(f"Real: {test_ds.class_names[labels[i]]} \n Predicted: {class_names[pred_data[i]]} \n with probability {prob_pred_data[i]}")
         plt.axis("off")
 
-#results are ridiculous, but the algorithm hasn't seen them 
+#results are ridiculous, but the algorithm hasn't seen them
 plt.savefig("Fruit Classification/Visualization/Multiple_Fruits.png")
-
