@@ -8,10 +8,13 @@ import matplotlib.pyplot as plt
 import os
 from tensorflow.keras.layers.experimental.preprocessing import Rescaling
 from tensorflow.keras.preprocessing import image_dataset_from_directory
+from tensorflow.keras.callbacks import ModelCheckpoint
 import shutil
 import numpy as np
-from PIL import Image
+from tensorflow.python.client import device_lib
 
+print("Num GPUs Available: ", len(tf.config.experimental.list_physical_devices('GPU')))
+device_lib.list_local_devices()
 
 
 class MVGGNET:
@@ -59,34 +62,34 @@ data_dir = 'Data\\Fruit'
 train_test_dir = [os.path.join(data_dir, x) for x in os.listdir(data_dir)]
 
 train_dir = train_test_dir[np.argmax([int(x.__contains__('Train')) for x in train_test_dir])]
-val_dir = train_test_dir[np.argmax([int(x.__contains__('Test')) for x in train_test_dir])]
-test_dir = train_test_dir[np.argmax([int(x.__contains__('Multiple')) for x in train_test_dir])]
-
-
-#all the classes from val in train which is ok
-val_classes_to_be_moved = [os.path.join(test_dir, x) for x in val_ds.class_names if x not in train_ds.class_names]
-train_classes_to_be_moved = [os.path.join(train_dir, x) for x in val_ds.class_names if x not in train_ds.class_names]
-
-#move some of the images in train
-for i, y in zip(val_classes_to_be_moved, train_classes_to_be_moved):
-    print(i, '-->', y)
-    shutil.move(i, y)
-
-#1/4 of the training images that we moved should go back to the val folder at random
-for i in train_classes_to_be_moved:
-    print('Folder: --> ', i)
-    all_jpg = [os.path.join(i, x) for x in os.listdir(i)]
-    random_jpg = list(np.random.choice(all_jpg, size=int(len(all_jpg)/4), replace=False))
-    val_folder_random_jpb = list(np.random.choice([i.replace('Training', 'Test')], size=len(random_jpg)))
-    os.makedirs(val_folder_random_jpb[0])
-    for z, y in zip(random_jpg, val_folder_random_jpb):
-        print(z, '-->', y)
-        shutil.move(z, y)
+test_dir = train_test_dir[np.argmax([int(x.__contains__('Test')) for x in train_test_dir])]
+val_dir = train_test_dir[np.argmax([int(x.__contains__('Validation')) for x in train_test_dir])]
 
 #set basic image processing variables
 height, width = 64, 64
 batch_size = 32
 
+training_files = [os.path.join(train_dir, x) for x in os.listdir(train_dir)]
+
+#1/4 of the training images that we have should be moved to the val folder at random
+#1 test image per class into the test folder
+# for i in training_files:
+#     print('Folder: --> ', i)
+#     all_jpg = [os.path.join(i, x) for x in os.listdir(i)]
+#     random_jpg_test = list(np.random.choice(all_jpg, size=1, replace=False))
+#     random_jpg_val = list(np.random.choice(all_jpg, size=int(len(all_jpg)/4), replace=False))
+#     test_folder_random_jpg = list(np.random.choice([i.replace('Training', 'Test')], size=len(random_jpg_test)))
+#     val_folder_random_jpg = list(np.random.choice([i.replace('Training', 'Validation')], size=len(random_jpg_test)))
+#     os.makedirs(test_folder_random_jpg[0])
+#     os.makedirs(val_folder_random_jpg[0])
+#     for z, y in zip(random_jpg_test, test_folder_random_jpg):
+#         print(z, '-->', y)
+#         shutil.move(z, y)
+#     for z, y in zip(random_jpg_test, val_folder_random_jpg):
+#         print(z, '-->', y)
+#         shutil.move(z, y)
+
+#recreate the train_ds and val_ds
 # create train set from directory
 train_ds = image_dataset_from_directory(
     train_dir,
@@ -137,25 +140,34 @@ for image_batch, labels_batch in train_ds:
 #Config the data set performance
 AUTOTUNE = tf.data.AUTOTUNE
 
+#preserve the classes
+num_classes = len(train_ds.class_names)
+
 train_ds = train_ds.cache().prefetch(buffer_size=AUTOTUNE)
 val_ds = val_ds.cache().prefetch(buffer_size=AUTOTUNE)
 
-num_classes = len(train_ds.class_names)
+#model checkpoint
+checkpoint = ModelCheckpoint("./saved_models/Checkpoint",
+                             monitor="val_loss", mode="min",
+                             save_best_only=True,
+                             verbose=1)
 
 #Modelling
 model = MVGGNET.build(width=32, height=32, depth=3, classes=num_classes)
-model.summary()
 
 model.compile(
   optimizer='adam',
-  loss=tf.losses.SparseCategoricalCrossentropy(from_logits=True),
+  loss=tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True),
   metrics=['accuracy'])
 
+
 model.fit(
-  train_ds,
-  validation_data=val_ds,
-  epochs=10
+    train_ds,
+    validation_data=val_ds,
+    epochs=10,
+    callbacks=[checkpoint]
 )
+
 
 #save the model
 model.save('Fruit Classification/saved_models/miniVGGNET')
