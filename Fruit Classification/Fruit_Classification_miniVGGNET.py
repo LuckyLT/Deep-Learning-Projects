@@ -147,7 +147,7 @@ train_ds = train_ds.cache().prefetch(buffer_size=AUTOTUNE)
 val_ds = val_ds.cache().prefetch(buffer_size=AUTOTUNE)
 
 #model checkpoint
-checkpoint = ModelCheckpoint("./saved_models/Checkpoint",
+checkpoint = ModelCheckpoint("./Fruit Classification/saved_models/Checkpoint",
                              monitor="val_loss", mode="min",
                              save_best_only=True,
                              verbose=1)

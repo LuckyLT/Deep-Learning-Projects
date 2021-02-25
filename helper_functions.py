@@ -1,85 +1,80 @@
-def load_filenames(dir_path):
+import os
+import numpy as np
+import shutil
+import cv2
+import imutils
+
+def split_data_dir(data_dir):
     """
-            Returns the filenames and their corresponding classes.
+    The function splits the data in Train, Test and Validation folders
+    Prerequsites: Train folder with all the images
     """
+    for x in ["Test", "Validation"]:
+        if x not in os.listdir(data_dir):
+            print(f'Creating {x} folder')
+            os.makedirs(os.path.join(data_dir, x))
+        else:
+            print(f"{x} folder exists!")
 
-    filenames = {
-        'image_file': [],
-        'image_class': []
-    }
+    file_dirs = [os.path.join(data_dir, x) for x in os.listdir(data_dir)]
+    train_dir = file_dirs[np.argmax([int(x.__contains__('Train')) for x in file_dirs])]
+    training_files = [os.path.join(train_dir, x) for x in os.listdir(train_dir)]
 
-    for car_brand in os.listdir(dir_path):
-        folder_name = os.path.join(dir_path, car_brand)
+    for i in training_files:
+        print('Folder: --> ', i)
+        all_jpg = [os.path.join(i, x) for x in os.listdir(i)]
+        random_jpg_test = list(np.random.choice(all_jpg, size=1, replace=False))
+        random_jpg_val = list(np.random.choice([x for x in all_jpg if x != random_jpg_test[0]], size=int(len(all_jpg)/4), replace=False))
+        test_folder_random_jpg = list(np.random.choice([i.replace('Train', 'Test')], size=len(random_jpg_test)))
+        val_folder_random_jpg = list(np.random.choice([i.replace('Train', 'Validation')], size=len(random_jpg_val)))
+        try:
+            os.makedirs(test_folder_random_jpg[0])
+        except:
+            print(f'Folder {test_folder_random_jpg[0]} already exist!')
+        try:
+            os.makedirs(val_folder_random_jpg[0])
+        except:
+            print(f'Folder {val_folder_random_jpg[0]} already exist!')
 
-        filenames_in_class = [os.path.join(folder_name, x) for x in os.listdir(folder_name)]
-        filenames['image_file'].extend(filenames_in_class)
+        for z, y in zip(random_jpg_test, test_folder_random_jpg):
+            print(z, '-->', y)
+            shutil.move(z, y)
+        for z, y in zip(random_jpg_val, val_folder_random_jpg):
+            print(z, '-->', y)
+            shutil.move(z, y)
 
-        filenames["image_class"].extend([car_brand] * len(filenames_in_class))
+class AspectPreprocessor:
+    def __init__(self, width, height, inter=cv2.INTER_AREA):
+        # store the target image width, height, and interpolation method used when resizing
+        self.width = width
+        self.height = height
+        self.inter = inter
 
-    return (pd.DataFrame(filenames))
+    def preprocess(self, image):
+        # grab the dimensions of the image and then initialize the deltas to use when cropping
+        (h, w) = image.shape[:2]
+        dW = 0
+        dH = 0
 
+        # if the width is smaller than the height, then resize
+        # along the width (i.e., the smaller dimension) and then
+        # update the deltas to crop the height to the desired dimension
+        if w < h:
+            image = imutils.resize(image, width=self.width, inter=self.inter)
+            dH = int((image.shape[0] - self.height) / 2.0)
 
-def get_image_dimensions(image_filename):
-    """
-    Returns the dimensions of the image (height, width, channels) in pixels.
+        # otherwise, the height is smaller than the width so
+        # resize along the height and then update the deltas to crop along the width
 
-    There are better methods which don't involve reading the entire image
-    and loading it in memory but this is simple enough.
-    """
-    return imread(image_filename).shape
+        else:
+            image = imutils.resize(image, height=self.height, inter=self.height)
+            dW = int((image.shape[1] - self.width) / 2.0)
 
+        # now that our images have been resized, we need to re-grab the width and height, followed by performing the crop
+        (h, w) = image.shape[:2]
+        image = image[dH:h - dH, dW:w - dW]
 
-def load_images(image_filename, image_label):
-    # pdb.set_trace()
-    # read the file and then decode it
-    result_file = tf.io.read_file(image_filename)
-    result_image = tf.image.decode_jpeg(result_file)  # decode_jpeg
-    # result_image = tf.image.convert_image_dtype(result_image, tf.float32) #convert to float32
+        # finally, resize the image to the provided spatial dimensions
+        # to ensure our output image is always a fixed size
 
-    # resize the image
-    result_image = tf.image.resize(result_image, (224, 224))  # resize the data
-    result_image /= 255.0
-    # def preprocess_image(x):
-    #     """
-    #     This is a stripped-down version of Keras' own imagenet preprocessing function,
-    #     as the original one is throwing an exception
-    #     """
-    #     pdb.set_trace()
-    #     backend = tf.keras.backend
-    #
-    #     # 'RGB'->'BGR'
-    #     x = x[..., ::-1]
-    #     mean = [103.939, 116.779, 123.68]
-    #     std = None
-    #
-    #     mean_tensor = backend.constant(-np.array(mean))
-    #
-    #     # Zero-center by mean pixel
-    #     if backend.dtype(x) != backend.dtype(mean_tensor):
-    #         x = backend.bias_add(
-    #             x, backend.cast(mean_tensor, backend.dtype(x)))
-    #     else:
-    #         x = backend.bias_add(x, mean_tensor)
-    #     if std is not None:
-    #         x /= std
-    #     return x
-
-    # image = preprocess_image(result_image)
-
-    return result_image, image_label
-
-
-def initialize_tf_dataset(data, labels, should_batch=True, should_repeat=True):
-    # pdb.set_trace()
-    dataset = tf.data.Dataset.from_tensor_slices((data.image_file.values, labels))
-    dataset = dataset.map(load_images)
-    dataset = dataset.shuffle(buffer_size=len(data))
-
-    if should_batch:
-        dataset = dataset.batch(BATCH_SIZE)
-    else:
-        dataset = dataset.batch(len(data))
-
-    if should_repeat:
-        dataset = dataset.repeat()
-    return dataset
+        return cv2.resize(image, (self.width, self.height), interpolation=self.inter)
