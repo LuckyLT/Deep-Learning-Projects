@@ -11,6 +11,7 @@ from tensorflow.keras.preprocessing import image_dataset_from_directory
 from tensorflow.keras.callbacks import ModelCheckpoint
 import shutil
 import numpy as np
+import pickle
 from tensorflow.python.client import device_lib
 
 print("Num GPUs Available: ", len(tf.config.experimental.list_physical_devices('GPU')))
@@ -119,6 +120,9 @@ test_ds = image_dataset_from_directory(
 
 #keep all the class names in a var
 class_names = train_ds.class_names
+
+with open('Fruit Classification//assets//class_names.pickle', 'wb') as file:
+    pickle.dump(class_names, file)
 
 plt.figure(figsize=(10, 10))
 for images, labels in train_ds.take(1):
