@@ -16,3 +16,4 @@ Env/
 .idea/vcs.xml
 /CatsAndDogs/
 /Embeddings/logs
+Fruit Classification/saved_models/
