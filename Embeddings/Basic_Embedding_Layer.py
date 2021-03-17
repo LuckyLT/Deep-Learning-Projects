@@ -5,7 +5,7 @@ import pandas as pd
 import tensorflow as tf
 from tensorflow.keras import layers
 import matplotlib.pyplot as plt
-
+import tensorflow.feature_column as fc
 
 # Embedding Layer for categorical variable
 data = pd.read_csv('../Data/Embeddings/babyweight_sample.txt')

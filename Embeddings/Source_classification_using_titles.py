@@ -5,8 +5,8 @@ import tensorflow as tf
 from tensorflow.keras import callbacks, layers, models, utils
 from tensorflow.keras.preprocessing.text import Tokenizer
 from tensorflow.keras.preprocessing.sequence import pad_sequences
-#Embedding Layers in Keras model
 
+#Embedding Layers in Keras
 #Load the dataset
 log_dir = './logs'
 data_dir = '../Data/Embeddings/'
@@ -16,6 +16,7 @@ data_path = os.path.join(data_dir, data)
 cols = ['title', 'source']
 
 titles_df = pd.read_csv(data_path, names=cols)
+titles_df = titles_df.sample(frac=1)
 titles_df.head()
 
 #keras Tokenizer will help us with some exploratory text statistics - like:
